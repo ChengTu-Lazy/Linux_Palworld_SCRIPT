@@ -1,0 +1,331 @@
+#!/bin/bash
+#History:
+# 2024年1月31日 诚徒开始编辑
+# 2024年2月2日 完成主要功能，实现一键开服关服，崩服自动重启，自动更新游戏，备份游戏存档功能
+
+#脚本版本
+SCRIPT_VERSION="1.0.0"
+# 脚本当前名称
+SCRIPT_NAME=$(basename "$0")
+# 脚本当前所在目录
+SCRIPT_PATH=$(pwd)
+# git加速链接
+ACCELERATION_URL="https://ghp.quickso.cn/https://github.com/ChengTu-Lazy//Linux_Palworld_SCRIPT"
+# 当前系统版本
+OS=$(awk -F = '/^NAME/{print $2}' /etc/os-release | sed 's/"//g' | sed 's/ //g' | sed 's/Linux//g' | sed 's/linux//g')
+#默认安装路径
+PALWORLD_DEFAULT_PATH="$HOME/.Palworld"
+#默认存档所在位置
+PALWORLD_SAVES_PATH="$HOME/.Palworld/Pal/Saved"
+
+# 获取最新版脚本
+get_latest_script() {
+	if [ -d "$HOME/clone_tamp" ]; then
+		rm -rf "$HOME/clone_tamp"
+		mkdir "$HOME/clone_tamp"
+	else
+		mkdir "$HOME/clone_tamp"
+	fi
+	clear
+	echo "下载时间超过10s,就是网络问题,请CTRL+C强制退出,再次尝试,实在不行手动下载最新的。"
+	cd "$HOME/clone_tamp" || exit
+	echo "是否使用git加速链接下载?"
+	echo "请输入 Y/y 同意 或者 N/n 拒绝并使用官方链接,推荐使用加速链接,失效了再用原版链接,默认回车直接使用加速链接"
+	read -r use_acceleration
+	if [ "${use_acceleration}" == "Y" ] || [ "${use_acceleration}" == "y" ] || [ "${use_acceleration}" == "" ]; then
+		git clone "${ACCELERATION_URL}"
+	elif [ "${use_acceleration}" == "N" ] || [ "${use_acceleration}" == "n" ]; then
+		git clone "https://github.com/ChengTu-Lazy/Linux_Palworld_SCRIPT.git"
+	else
+		echo "输入有误,请重新输入"
+		get_latest_script
+	fi
+	cp "$HOME/clone_tamp/Linux_Palworld_SCRIPT/Palworld_SCRIPT.sh" "$SCRIPT_PATH/$SCRIPT_NAME"
+	cd "$SCRIPT_PATH" || exit
+	rm -rf "$HOME/clone_tamp"
+	clear
+	bash "$SCRIPT_PATH"/"$SCRIPT_NAME"
+}
+
+#前期准备
+prepare() {
+	if [ ! -d "$HOME/Steam" ] ; then
+		pre_library
+	fi
+	# 下载游戏本体
+	if [ ! -f "$PALWORLD_DEFAULT_PATH/PalServer.sh" ] || [ ! -f "$HOME"/.steam/sdk64/steamclient.so ]; then
+		echo "正在下载幻兽帕鲁游戏64位依赖!!!"
+		steamcmd +login anonymous +app_update 1007 +quit
+		echo "幻兽帕鲁游戏64位依赖下载完成!!!"
+		mkdir -p "$HOME"/.steam/sdk64/
+		cp "$HOME"/Steam/steamapps/common/Steamworks\ SDK\ Redist/linux64/steamclient.so "$HOME"/.steam/sdk64/
+		echo "正在下载幻兽帕鲁游戏本体！！！"
+		steamcmd +force_install_dir "$PALWORLD_DEFAULT_PATH" +login anonymous +app_update 2394010 validate +quit
+		echo "幻兽帕鲁游戏本体下载完成！！！"
+	fi
+}
+
+pre_library(){
+	if [ "$OS" == "Ubuntu" ]; then
+		echo ""
+		echo "##########################"
+		echo "# 加载 Ubuntu Linux 环境 #"
+		echo "##########################"
+		echo ""
+				
+		if [ "$(uname -m)" = "x86_64" ]; then
+			sudo add-apt-repository multiverse
+			sudo dpkg --add-architecture i386
+			sudo apt update
+			sudo apt install lib32gcc1 steamcmd 
+		fi
+
+		if [ "$(which steamcmd)" != "/usr/games/steamcmd" ]; then
+			sudo apt install steamcmd
+		fi
+
+		#一些必备工具
+		sudo apt-get -y install screen
+		sudo apt-get -y install htop
+		sudo apt-get -y install gawk
+		sudo apt-get -y install zip unzip
+		sudo apt-get -y install git
+	fi
+}
+
+#检查是否成功开启
+start_server_check() {
+	start_time=$(date +%s)
+	if [[ "$(screen -ls | grep --text -c "\<PalServer\>")" -gt 0 ]];then
+		flag=true
+		while $flag 
+		do
+			echo -en "\r服务器开启中,预计等待12s,请稍后.                              "
+			sleep 1
+			echo -en "\r服务器开启中,预计等待12s,请稍后..                             "
+			sleep 1
+			echo -en "\r服务器开启中,预计等待12s,请稍后...                            "
+			if [ "$(grep --text "Loaded '$HOME/.steam/sdk64/steamclient.so' OK" -c "$PALWORLD_DEFAULT_PATH/PalServer.log")" -gt 0 ]
+			then
+				echo -e "\n\r\e[92m服务器启动完成!!!                            \e[0m"
+				flag=false
+			fi
+			sleep 1
+		done
+		
+		end_time=$(date +%s)
+		cost_time=$((end_time - start_time))
+		cost_minutes=$((cost_time / 60))
+		cost_seconds=$((cost_time % 60))
+		cost_echo="$cost_minutes分$cost_seconds秒"
+		echo -e "\r\e[92m本次开服花费时间: $cost_echo\e[0m"
+		sleep 1
+	fi
+
+}
+
+#查看游戏更新情况
+checkupdate() {
+	# 保存buildid的位置
+	DST_now=$(date +%Y年%m月%d日%H:%M)
+	# 判断一下对应开启的版本
+	# 获取最新buildid
+	echo "正在获取最新buildid。。。"
+	latest_buildid=$(steamcmd +login anonymous +app_info_update 1 +app_info_print 2394010 +quit | sed -e '/"branches"/,/^}/!d' | sed -n "/\"public\"/,/}/p" | grep --text -m 1 buildid | sed 's/[^0-9]//g') 	
+	#查看buildid是否一致
+	if [[ $latest_buildid -gt $(grep --text -m 1 buildid "$PALWORLD_DEFAULT_PATH"/steamapps/appmanifest_2394010.acf | sed 's/[^0-9]//g') ]]; then
+		echo " "
+		echo -e "\e[31m${DST_now}:游戏服务端有更新! \e[0m"
+		echo " "
+		# 更新游戏本体
+		echo -e "\e[33m${DST_now}:更新游戏中。。。 \e[0m"
+		update_game
+	else
+		echo -e "\e[92m${DST_now}:游戏服务端没有更新!\e[0m"
+	fi
+}
+
+auto_update(){
+	# 配置auto_update.sh
+	printf "%s" "#!/bin/bash
+	# 当前脚本所在位置及名称
+	script_path_name=\"$SCRIPT_PATH/$SCRIPT_NAME\"
+	# 使用脚本的方法
+	script(){
+		bash \$script_path_name \"\$1\" \"-AUTO\"
+	}
+	backup()
+	{
+		# 自动备份
+		if [ \"\$timecheck\" == 0 ];then
+			if [  -d \"$PALWORLD_SAVES_PATH\" ];then
+				cd \"$PALWORLD_SAVES_PATH\" || exit
+				if [ ! -d \"$PALWORLD_SAVES_PATH/saves_bak\" ];then
+					mkdir saves_bak
+				fi
+				cd \"$PALWORLD_SAVES_PATH/saves_bak\" || exit
+				master_saves_bak=\$(find . -maxdepth 1 -name '*.zip' | wc -l)
+				if [ \"\$master_saves_bak\" -gt 21 ];then
+					find . -maxdepth 1 -mtime +30 -name '*.zip'  | awk '{if(NR -gt 10){print \$1}}' |xargs rm -f {};
+				fi
+				cd \"$PALWORLD_SAVES_PATH\"|| exit
+				time=\$(date "+%Y%m%d%H%M%S")
+				zip -r saves_bak/\"backup_\$time\".zip SaveGames/ >> /dev/null 2>&1
+			fi
+		fi
+	}
+	timecheck=0
+	# 保持运行
+	while :
+			do
+				script -checkprocess
+				timecheck=\$(( timecheck%750 ))
+				backup
+				((timecheck++))
+				script -checkupdate
+				sleep 10
+			done
+	" >"$PALWORLD_DEFAULT_PATH"/auto_update.sh
+	chmod 777 "$PALWORLD_DEFAULT_PATH"/auto_update.sh
+	screen -dmS "PalServer_AutoUpdate" /bin/sh -c "$PALWORLD_DEFAULT_PATH/auto_update.sh"
+	echo -e "\e[92m自动更新进程 PalServer_AutoUpdate 已启动\e[0m"
+	sleep 1
+}
+
+start_server(){
+	if [[ "$(screen -ls | grep --text -c "\<PalServer\>")" -gt 0 ]];then
+		echo 服务器已经启动了,请勿重复启动！
+	else
+		rm -rf "$PALWORLD_DEFAULT_PATH"/PalServer.log
+		chmod 777 "$PALWORLD_DEFAULT_PATH"/PalServer.sh
+		screen -dmS  "PalServer" bash "$PALWORLD_DEFAULT_PATH"/PalServer.sh -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS  
+		screen -S  "PalServer" -X logfile "$PALWORLD_DEFAULT_PATH"/PalServer.log
+		screen -S PalServer -X log on
+		start_server_check
+		
+	fi
+	if [[ "$(screen -ls | grep --text -c "\<PalServer_AutoUpdate\>")" -le 0 ]];then
+		auto_update
+	fi
+}
+
+# 关闭服务器
+close_server() {
+	# 进程名称符合就删除
+	while :; do
+		if [[ $(screen -ls | grep --text -c "\<PalServer\>") -gt 0 ]]; then
+			for i in $(screen -ls | grep --text -w "\<PalServer\>" | awk '/[0-9]{1,}\./ {print strtonum($1)}'); do
+				kill "$i"
+				echo -e "\r\e[92m服务器已关闭!!!                   \e[0m "
+				sleep 0.2
+			done
+		else
+			break
+		fi
+
+		if [[ $(screen -ls | grep --text -c "\<PalServer_AutoUpdate\>") -gt 0 ]]; then
+			for i in $(screen -ls | grep --text -w "\<PalServer_AutoUpdate\>" | awk '/[0-9]{1,}\./ {print strtonum($1)}'); do
+				kill "$i"
+				echo -e "\r\e[92m服务器自动更新进程已关闭!!!                   \e[0m "
+				sleep 0.2
+			done
+		else
+			break
+		fi
+	done
+}
+
+# 更新游戏
+update_game() {
+	echo "正在更新游戏,请稍后。。。更新之后重启服务器生效哦。。。"
+	echo "同步最新正式版游戏本体内容中。。。"
+	steamcmd +force_install_dir "$PALWORLD_DEFAULT_PATH" +login anonymous +app_update 2394010 validate +quit
+	echo 更新完成
+}
+
+#重启游戏
+restart_server(){
+	close_server
+	start_server
+}
+
+init(){
+	# 初始化环境
+	rm -rf "$HOME"/Steam
+	rm -rf "$PALWORLD_DEFAULT_PATH/PalServer.sh"
+	pre_library
+	prepare
+}
+
+#查看进程执行情况
+checkprocess() {
+	if [[ $(screen -ls | grep --text -c "\<PalServer\>") -eq 1 ]]; then
+		echo "服务器运行正常"
+	else
+		echo "服务器已经关闭,自动开启中。。。"
+		start_server -auto
+	fi
+}
+
+
+#主菜单
+main() {
+	while :; do
+		tput setaf 2
+		if [[ $(screen -ls | grep --text -c "\<PalServer\>") -gt 0 ]]; then
+			server_staut="✅"
+		else
+			server_staut="❌"
+		fi
+
+		if [[ $(screen -ls | grep --text -c "\<PalServer_AutoUpdate\>") -gt 0 ]]; then
+			autoUpdateServer_staut="✅"
+		else
+			autoUpdateServer_staut="❌"
+		fi
+
+		echo "============================================================"
+		printf "%s\n" "                         脚本版本:${SCRIPT_VERSION}  "
+		printf "%s\n" "          服务器当前状态: $server_staut  自动更新进程状态: $autoUpdateServer_staut  "
+		echo "============================================================"
+		echo "                                          	                 "
+		echo "  [1]启动服务器         [2]关闭服务器         [3]重启服务器     "
+		echo "                                          	                 "
+		echo "  [4]手动更新服务器     [5]重新安装环境       [6]获取最新脚本   "
+		echo "                                          	                 "
+		echo "============================================================"
+		echo "                                                                                  "
+		echo -e "\e[92m请输入命令代号:\e[0m"
+		read -r selectedNum
+		(case $selectedNum in
+			1)
+				start_server
+				;;
+			2)
+				close_server
+				;;
+			3)
+				restart_server
+				;;
+			4)
+				update_game
+				;;
+			5)
+				init
+				;;
+			6)
+				get_latest_script
+				;;
+			esac)
+	done
+}
+
+# API
+if [ "$1" == "-checkprocess" ]; then
+	checkprocess "$2"
+elif [ "$1" == "-checkupdate" ]; then
+	checkupdate "$2"
+elif [ "$1" == "" ] && [ "$2" == "" ]; then
+	prepare
+	main
+fi
