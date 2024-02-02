@@ -165,7 +165,7 @@ auto_update(){
 				fi
 				cd \"$PALWORLD_SAVES_PATH/saves_bak\" || exit
 				master_saves_bak=\$(find . -maxdepth 1 -name '*.zip' | wc -l)
-				if [ \"\$master_saves_bak\" -gt 21 ];then
+				if [ \"\$master_saves_bak\" -gt 101 ];then
 					find . -maxdepth 1 -mtime +30 -name '*.zip'  | awk '{if(NR -gt 10){print \$1}}' |xargs rm -f {};
 				fi
 				cd \"$PALWORLD_SAVES_PATH\"|| exit
