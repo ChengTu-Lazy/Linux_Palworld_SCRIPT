@@ -3,9 +3,10 @@
 # 2024年1月31日 诚徒开始编辑
 # 2024年2月2日 完成主要功能，实现一键开服关服，崩服自动重启，自动更新游戏，备份游戏存档功能
 # 2024年2月4日 新增配置文件修改功能
+# 2024年2月7日 修复自动更新服务器后不生效的问题
 
 #脚本版本
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 # 脚本当前名称
 SCRIPT_NAME=$(basename "$0")
 # 脚本当前所在目录
@@ -143,6 +144,7 @@ checkupdate() {
 		# 更新游戏本体
 		echo -e "\e[33m${DST_now}:更新游戏中。。。 \e[0m"
 		update_game
+		restart_server
 	else
 		echo -e "\e[92m${DST_now}:游戏服务端没有更新!\e[0m"
 	fi
