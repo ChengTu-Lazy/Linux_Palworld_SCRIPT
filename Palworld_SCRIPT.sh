@@ -4,9 +4,11 @@
 # 2024年2月2日 完成主要功能，实现一键开服关服，崩服自动重启，自动更新游戏，备份游戏存档功能
 # 2024年2月4日 新增配置文件修改功能
 # 2024年2月7日 修复自动更新服务器后不生效的问题
+# 2024年2月9日 修复更改默认配置不生效的问题
+
 
 #脚本版本
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.3"
 # 脚本当前名称
 SCRIPT_NAME=$(basename "$0")
 # 脚本当前所在目录
@@ -18,7 +20,7 @@ OS=$(awk -F = '/^NAME/{print $2}' /etc/os-release | sed 's/"//g' | sed 's/ //g' 
 #默认安装路径
 PALWORLD_DEFAULT_PATH="$HOME/.Palworld"
 #默认配置文件所在位置
-DEFAULTPALWORLDSETTINGS_PATH="$PALWORLD_DEFAULT_PATH/DefaultPalWorldSettings.ini"
+DEFAULTPALWORLDSETTINGS_PATH="$PALWORLD_DEFAULT_PATH/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
 #默认存档所在位置
 PALWORLD_SAVES_PATH="$HOME/.Palworld/Pal/Saved"
 
@@ -203,7 +205,7 @@ start_server(){
 	else
 		rm -rf "$PALWORLD_DEFAULT_PATH"/PalServer.log
 		chmod 777 "$PALWORLD_DEFAULT_PATH"/PalServer.sh
-		screen -dmS  "PalServer" bash "$PALWORLD_DEFAULT_PATH"/PalServer.sh -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS  
+		screen -dmS  "PalServer" bash "$PALWORLD_DEFAULT_PATH"/PalServer.sh -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS  -EpicApp=PalServer
 		screen -S  "PalServer" -X logfile "$PALWORLD_DEFAULT_PATH"/PalServer.log
 		screen -S PalServer -X log on
 		start_server_check
